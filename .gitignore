@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Crawled/generated data - these can be large and are reproducible by re-running
+# the crawlers, so they don't belong in git. Shoppers Stop files may also be
+# confidential - never commit them.
+data/catalog_downloads/*
+data/shopperstop_master/*
+data/matched/*
+data/details/*
+!data/catalog_downloads/.gitkeep
+!data/shopperstop_master/.gitkeep
+!data/matched/.gitkeep
+!data/details/.gitkeep
+
+# OS / editor
+.DS_Store
+.vscode/
+*.swp
