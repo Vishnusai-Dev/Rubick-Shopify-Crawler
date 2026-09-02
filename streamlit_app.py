@@ -182,6 +182,32 @@ if do_match:
             value=crawled_csv_path or "",
         )
 
+# --- Stage 3 config (when running standalone, without stage 2 in this session) ---
+matched_dir_for_site = os.path.join(MATCHED_DIR, site["name"]) if mode == "Existing site" else None
+matched_xlsx_path = os.path.join(matched_dir_for_site, "matched.xlsx") if matched_dir_for_site else None
+
+if do_details and not do_match:
+    st.subheader("4. Matched file (Stage 2 is unchecked, so point Stage 3 at existing matched data)")
+
+    default_path = matched_xlsx_path
+    existing_found = default_path and os.path.exists(default_path)
+    st.caption(
+        f"Looking for: `{default_path}` - "
+        + ("found on disk, will use it." if existing_found else "not found. Upload it below or fix the path.")
+    )
+
+    uploaded_matched = st.file_uploader(
+        "Upload matched.xlsx (from a previous Stage 2 run / the download button)",
+        type=["xlsx"],
+    )
+    matched_xlsx_path = st.text_input("Path to matched.xlsx", value=default_path or "")
+
+    if uploaded_matched:
+        os.makedirs(os.path.dirname(matched_xlsx_path) or matched_dir_for_site, exist_ok=True)
+        with open(matched_xlsx_path, "wb") as f:
+            f.write(uploaded_matched.getbuffer())
+        st.success(f"Saved uploaded file to: {matched_xlsx_path}")
+
 st.markdown("---")
 
 # --- Run button ---
@@ -189,9 +215,15 @@ if st.button("Run selected stages", type="primary"):
     if do_match and not shopperstop_file_path:
         st.error("Please upload a Shoppers Stop file before running the match stage.")
         st.stop()
+    if do_details and not do_match and not (matched_xlsx_path and os.path.exists(matched_xlsx_path)):
+        st.error(f"No matched.xlsx found at: {matched_xlsx_path}. "
+                 f"Upload it in section 4 above, or check 'Match against Shoppers Stop file' to generate it first.")
+        st.stop()
 
-    matched_dir_for_site = os.path.join(MATCHED_DIR, site["name"])
-    matched_xlsx_path = os.path.join(matched_dir_for_site, "matched.xlsx")
+    if matched_dir_for_site is None:
+        matched_dir_for_site = os.path.join(MATCHED_DIR, site["name"])
+    if matched_xlsx_path is None:
+        matched_xlsx_path = os.path.join(matched_dir_for_site, "matched.xlsx")
 
     # --- Stage 1: Crawl ---
     if do_crawl:
