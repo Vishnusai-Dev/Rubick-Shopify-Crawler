@@ -62,10 +62,10 @@ sites:
   - name: jack_and_jones
     domain: jackjones.in
     base_url: https://www.jackjones.in
-    platform: shopify_standard
-    detail_parser: ""
-    status: crawl_only
-    notes: ""
+    platform: shopify_custom
+    detail_parser: jack_and_jones
+    status: active
+    notes: "Clean table.product-specifications-table with .specification-label/.specification-value cells. No JSON-LD image field - falls back to og:image."
 
 # Add new brands here as they're onboarded. See README.md -> "Onboarding a
 # New Website" for the exact steps. A minimal new entry looks like:
