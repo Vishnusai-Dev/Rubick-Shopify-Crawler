@@ -234,6 +234,32 @@ script for that run.
 
 ---
 
+## Making site registration permanent (Streamlit Cloud only)
+
+Streamlit Cloud's filesystem resets on every redeploy and restart, pulling
+fresh from GitHub each time. That means clicking "Add new site" in the app
+only persists if it's also pushed to GitHub - otherwise it's gone on the
+next reload. To make it permanent:
+
+1. **Create a GitHub token:** GitHub -> profile photo -> Settings -> Developer
+   settings -> Personal access tokens -> Fine-grained tokens -> Generate new
+   token. Restrict it to this one repo, with Contents permission set to
+   Read and write.
+2. **Add it to Streamlit Cloud:** your app -> Settings -> Secrets, paste:
+   ```toml
+   [github]
+   token = "github_pat_...your_token..."
+   repo = "your-username/your-repo-name"
+   branch = "main"
+   ```
+3. Save - the app restarts automatically. From then on, "Register site"
+   pushes `config/sites.yaml` straight to GitHub via the Contents API, so it
+   survives redeploys just like any other file change.
+
+Running the app locally instead of on Streamlit Cloud doesn't need any of
+this - a local filesystem is already permanent, so `save_sites()` just
+writes the file directly and you commit/push it yourself as usual.
+
 ## Pushing this repo to GitHub
 
 ```bash
