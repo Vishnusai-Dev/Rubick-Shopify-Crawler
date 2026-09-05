@@ -257,6 +257,19 @@ if st.button("Run selected stages", type="primary"):
             st.stop()
         st.success("Crawl stage complete.")
 
+        crawled_output_path = os.path.join(CATALOG_DIR, f"{derive_store_name(site['base_url'])}.csv")
+        if os.path.exists(crawled_output_path):
+            crawled_preview_df = pd.read_csv(crawled_output_path, dtype=str)
+            st.write(f"**{len(crawled_preview_df)} rows crawled.** Preview:")
+            st.dataframe(crawled_preview_df.head(20))
+            with open(crawled_output_path, "rb") as f:
+                st.download_button("Download crawled catalog CSV", f,
+                                    file_name=f"{site['name']}_catalog.csv",
+                                    key="download_crawled_csv")
+        else:
+            st.warning(f"Crawl reported success but no output file found at {crawled_output_path} - "
+                       f"check the log above for '0 products found'.")
+
     # --- Stage 2: Match ---
     if do_match:
         st.subheader("Stage 2: Matching against Shoppers Stop")
