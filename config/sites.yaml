@@ -1,79 +1,46 @@
-# =============================================================================
-# SITE REGISTRY
-# =============================================================================
-# One entry per brand website. This file is the single source of truth for
-# every site the system knows how to crawl. The Streamlit app reads this to
-# populate the "select a website" dropdown, and the detail-scraper's site
-# dispatch logic (crawlers/site_parsers/) matches against `domain`.
-#
-# platform:
-#   shopify_standard  -> /products.json works cleanly, no custom parser needed
-#                        for rich attributes (rare - most Shopify themes hide
-#                        metafields from the API)
-#   shopify_custom    -> Shopify, but rich attributes need a dedicated HTML
-#                        parser in crawlers/site_parsers/ (the common case)
-#   other             -> not Shopify - /products.json will not work at all,
-#                        needs full custom crawling approach
-#
-# detail_parser: the Python module name under crawlers/site_parsers/ that
-#   knows how to extract this site's rich attributes. Leave blank ("") if
-#   platform is shopify_standard (no custom parser needed) or if onboarding
-#   is still in progress (see README "Onboarding a New Website").
-#
-# status:
-#   active      -> fully onboarded, both stages work
-#   crawl_only  -> bulk catalog crawl works, detail-parser not built yet
-#   new         -> just added, nothing verified yet
-# -----------------------------------------------------------------------------
-
 sites:
-  - name: celio
-    domain: celio.in
-    base_url: https://celio.in
-    platform: shopify_custom
-    detail_parser: celio
-    status: active
-    notes: "Product Details table is div.block > .pd_label/.pd_text pairs"
-
-  - name: house_of_rare
-    domain: thehouseofrare.com
-    base_url: https://thehouseofrare.com
-    platform: shopify_custom
-    detail_parser: house_of_rare
-    status: active
-    notes: "Tabbed panels (#tab-description, #tab-page-1). Images via JSON-LD Product block."
-
-  - name: raymond
-    domain: myraymond.com
-    base_url: https://myraymond.com
-    platform: shopify_standard
-    detail_parser: ""
-    status: crawl_only
-    notes: "No rich-attribute parser built yet - only bulk catalog + barcode confirmed working."
-
-  - name: park_avenue
-    domain: pa.myraymond.com
-    base_url: https://pa.myraymond.com
-    platform: shopify_standard
-    detail_parser: ""
-    status: crawl_only
-    notes: ""
-
-  - name: jack_and_jones
-    domain: jackjones.in
-    base_url: https://www.jackjones.in
-    platform: shopify_custom
-    detail_parser: jack_and_jones
-    status: active
-    notes: "Clean table.product-specifications-table with .specification-label/.specification-value cells. No JSON-LD image field - falls back to og:image."
-
-# Add new brands here as they're onboarded. See README.md -> "Onboarding a
-# New Website" for the exact steps. A minimal new entry looks like:
-#
-#   - name: new_brand
-#     domain: newbrand.com
-#     base_url: https://newbrand.com
-#     platform: shopify_custom
-#     detail_parser: ""
-#     status: new
-#     notes: "just added, not yet inspected"
+- name: celio
+  domain: celio.in
+  base_url: https://celio.in
+  platform: shopify_custom
+  detail_parser: celio
+  status: active
+  notes: Product Details table is div.block > .pd_label/.pd_text pairs
+- name: house_of_rare
+  domain: thehouseofrare.com
+  base_url: https://thehouseofrare.com
+  platform: shopify_custom
+  detail_parser: house_of_rare
+  status: active
+  notes: 'Tabbed panels (#tab-description, #tab-page-1). Images via JSON-LD Product
+    block.'
+- name: raymond
+  domain: myraymond.com
+  base_url: https://myraymond.com
+  platform: shopify_standard
+  detail_parser: ''
+  status: crawl_only
+  notes: No rich-attribute parser built yet - only bulk catalog + barcode confirmed
+    working.
+- name: park_avenue
+  domain: pa.myraymond.com
+  base_url: https://pa.myraymond.com
+  platform: shopify_standard
+  detail_parser: ''
+  status: crawl_only
+  notes: ''
+- name: jack_and_jones
+  domain: jackjones.in
+  base_url: https://www.jackjones.in
+  platform: shopify_custom
+  detail_parser: jack_and_jones
+  status: active
+  notes: Clean table.product-specifications-table with .specification-label/.specification-value
+    cells. No JSON-LD image field - falls back to og:image.
+- name: aurelia
+  domain: shopforaurelia.com
+  base_url: https://shopforaurelia.com
+  platform: shopify_custom
+  detail_parser: ''
+  status: new
+  notes: ''
