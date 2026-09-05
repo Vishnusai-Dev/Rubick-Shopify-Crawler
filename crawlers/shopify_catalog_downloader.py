@@ -114,6 +114,31 @@ def normalize_base_url(url: str) -> str:
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
+def create_session(retry_total=3, backoff_factor=1.5):
+    session = requests.Session()
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
+
+    retry_strategy = Retry(
+        total=retry_total,
+        backoff_factor=backoff_factor,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET"],
+        respect_retry_after_header=True,
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=20, pool_maxsize=20)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    session.headers.update(HEADERS)
+    return session
+
+
+# One shared session for discovery requests, so retries/backoff apply here too -
+# previously these used plain requests.get() with zero retry logic, unlike the
+# barcode backfill phase which already had this.
+_discovery_session = create_session(retry_total=5, backoff_factor=2.0)
+
+
 def fetch_page_via_param(base_url: str, page: int, collection_handle: str = None) -> list:
     """Try classic ?page=N&limit=250 pagination."""
     if collection_handle:
@@ -121,10 +146,9 @@ def fetch_page_via_param(base_url: str, page: int, collection_handle: str = None
     else:
         endpoint = urljoin(base_url, "/products.json")
 
-    resp = requests.get(
+    resp = _discovery_session.get(
         endpoint,
         params={"limit": PAGE_LIMIT, "page": page},
-        headers=HEADERS,
         timeout=TIMEOUT,
     )
     resp.raise_for_status()
@@ -144,7 +168,7 @@ def fetch_via_cursor(base_url: str, collection_handle: str = None) -> list:
     url = endpoint
 
     for _ in range(MAX_PAGES):
-        resp = requests.get(url, params=params, headers=HEADERS, timeout=TIMEOUT)
+        resp = _discovery_session.get(url, params=params, timeout=TIMEOUT)
         resp.raise_for_status()
         products = resp.json().get("products", [])
         if not products:
@@ -160,24 +184,6 @@ def fetch_via_cursor(base_url: str, collection_handle: str = None) -> list:
         time.sleep(REQUEST_DELAY)
 
     return all_products
-
-
-def create_session(retry_total=3, backoff_factor=1.5):
-    session = requests.Session()
-    from requests.adapters import HTTPAdapter
-    from urllib3.util.retry import Retry
-
-    retry_strategy = Retry(
-        total=retry_total,
-        backoff_factor=backoff_factor,
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["GET"],
-    )
-    adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=20, pool_maxsize=20)
-    session.mount("https://", adapter)
-    session.mount("http://", adapter)
-    session.headers.update(HEADERS)
-    return session
 
 
 def fetch_single_product(session: requests.Session, base_url: str, handle: str) -> dict:
