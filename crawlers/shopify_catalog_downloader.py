@@ -58,7 +58,11 @@ signal.signal(signal.SIGINT, handle_sigint)
 # CONFIG
 # ----------------------------------------------------------------------
 
-OUTPUT_DIR = "catalog_downloads"
+# Anchored to this script's own location, not the caller's current directory -
+# this matters because Streamlit runs this as a subprocess from a different
+# working directory than a direct CLI run would, and both need to agree on
+# where output lands (the app looks for it at repo_root/data/catalog_downloads).
+OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "catalog_downloads")
 PAGE_LIMIT = 250          # Shopify's max page size
 REQUEST_DELAY = 1.0       # seconds between requests, be polite / avoid rate-limits
 MAX_PAGES = 200           # safety cap (200 * 250 = 50,000 products per store)
