@@ -9,6 +9,7 @@ Run with:
     streamlit run streamlit_app.py
 """
 
+import base64
 import os
 import re
 import subprocess
@@ -16,11 +17,13 @@ import sys
 from urllib.parse import urlparse
 
 import pandas as pd
+import requests
 import streamlit as st
 import yaml
 
 REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(REPO_ROOT, "config", "sites.yaml")
+CONFIG_PATH_IN_REPO = "config/sites.yaml"  # path as GitHub sees it, not the local filesystem
 CRAWLERS_DIR = os.path.join(REPO_ROOT, "crawlers")
 MATCHING_DIR = os.path.join(REPO_ROOT, "matching")
 DATA_DIR = os.path.join(REPO_ROOT, "data")
@@ -34,6 +37,49 @@ for d in [CATALOG_DIR, SHOPPERSTOP_DIR, MATCHED_DIR, DETAILS_DIR]:
 
 
 # =============================================================================
+# GitHub API - makes sites.yaml changes survive redeploys/restarts, since
+# Streamlit Cloud's local filesystem is ephemeral and resets to whatever is
+# in the GitHub repo on every redeploy.
+# =============================================================================
+
+def github_configured() -> bool:
+    return "github" in st.secrets and all(
+        k in st.secrets["github"] for k in ("token", "repo")
+    )
+
+
+def push_file_to_github(path_in_repo: str, content: str, commit_message: str):
+    """Create or update a file in the GitHub repo via the Contents API.
+    Raises with a clear message on failure - caller decides how to surface it."""
+    token = st.secrets["github"]["token"]
+    repo = st.secrets["github"]["repo"]
+    branch = st.secrets["github"].get("branch", "main")
+
+    api_url = f"https://api.github.com/repos/{repo}/contents/{path_in_repo}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+    }
+
+    # Need the current file's sha to update it (GitHub requires this to avoid
+    # clobbering concurrent edits) - a 404 just means the file doesn't exist yet.
+    get_resp = requests.get(api_url, headers=headers, params={"ref": branch}, timeout=15)
+    sha = get_resp.json().get("sha") if get_resp.status_code == 200 else None
+
+    payload = {
+        "message": commit_message,
+        "content": base64.b64encode(content.encode("utf-8")).decode("utf-8"),
+        "branch": branch,
+    }
+    if sha:
+        payload["sha"] = sha
+
+    put_resp = requests.put(api_url, headers=headers, json=payload, timeout=15)
+    if put_resp.status_code not in (200, 201):
+        raise RuntimeError(f"GitHub API error {put_resp.status_code}: {put_resp.text}")
+
+
+# =============================================================================
 # Site registry helpers
 # =============================================================================
 
@@ -43,9 +89,24 @@ def load_sites():
     return data.get("sites", [])
 
 
-def save_sites(sites):
+def save_sites(sites, commit_message="Update sites.yaml via Streamlit app"):
+    """Writes locally (so the current session sees the change immediately)
+    AND pushes to GitHub (so it survives the next redeploy/restart). If
+    GitHub isn't configured or the push fails, the local write still
+    succeeds - the caller should tell the user it won't persist though."""
+    yaml_content = yaml.safe_dump({"sites": sites}, sort_keys=False, default_flow_style=False)
+
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        yaml.safe_dump({"sites": sites}, f, sort_keys=False, default_flow_style=False)
+        f.write(yaml_content)
+
+    if not github_configured():
+        raise RuntimeError(
+            "GitHub isn't configured (missing st.secrets['github']) - this change "
+            "will be LOST on the next redeploy/restart. See README.md -> "
+            "'Making site registration permanent' to set up a token."
+        )
+
+    push_file_to_github(CONFIG_PATH_IN_REPO, yaml_content, commit_message)
 
 
 def derive_store_name(url: str) -> str:
@@ -117,6 +178,15 @@ with st.sidebar:
         st.info("This registers the site so the pipeline knows about it. "
                 "You'll still need to run inspect_product_page.py yourself "
                 "and (if needed) write a parser - see README.md.")
+
+        if not github_configured():
+            st.warning(
+                "GitHub isn't configured for this app yet - registering a site "
+                "will work for this session but **will be lost on the next "
+                "redeploy/restart**. See README.md -> 'Making site registration "
+                "permanent' to fix this properly."
+            )
+
         new_name = st.text_input("Internal name (lowercase, underscores)", placeholder="e.g. new_brand")
         new_url = st.text_input("Base URL", placeholder="https://newbrand.com/")
         new_platform = st.selectbox("Platform (best guess for now)",
@@ -132,8 +202,12 @@ with st.sidebar:
                     "name": new_name, "domain": domain, "base_url": new_url.rstrip("/"),
                     "platform": new_platform, "detail_parser": "", "status": "new", "notes": "",
                 })
-                save_sites(sites)
-                st.success(f"Registered '{new_name}'. Reload the page to select it.")
+                try:
+                    save_sites(sites, commit_message=f"Register new site: {new_name}")
+                    st.success(f"Registered '{new_name}' and pushed to GitHub - "
+                               f"this will persist. Reload the page to select it.")
+                except RuntimeError as e:
+                    st.warning(f"Registered '{new_name}' for this session only: {e}")
         st.stop()
 
 st.markdown("---")
