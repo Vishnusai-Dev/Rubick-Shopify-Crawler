@@ -54,3 +54,10 @@ sites:
   detail_parser: ''
   status: new
   notes: ''
+- name: ucb
+  domain: in.benetton.com
+  base_url: https://in.benetton.com
+  platform: shopify_custom
+  detail_parser: ''
+  status: new
+  notes: ''
