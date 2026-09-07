@@ -212,208 +212,243 @@ with st.sidebar:
 
 st.markdown("---")
 
-# --- Stage selection ---
-st.subheader("1. Choose which stages to run")
-col1, col2, col3 = st.columns(3)
-with col1:
-    do_crawl = st.checkbox("Crawl complete catalog", value=True,
-                            help="Bulk /products.json crawl + barcode backfill for this site")
-with col2:
-    do_match = st.checkbox("Match against Shoppers Stop file", value=True,
-                            help="Join the crawled catalog to a Shoppers Stop SKU/EAN file on barcode")
-with col3:
-    do_details = st.checkbox("Scrape rich details (matched SKUs only)", value=True,
-                              help="Only scrapes products that matched in stage 2 - this is the optimization")
+# --- Platform tabs: organize by platform type. Shopify sites get the full
+# pipeline below; non-Shopify sites currently have no automated crawl (the
+# crawlers only speak Shopify's /products.json), so that tab just surfaces
+# site info/notes rather than a broken Run button. ---
+tab_shopify, tab_non_shopify = st.tabs(["Shopify Sites", "Non-Shopify Sites"])
 
-st.markdown("---")
+is_shopify_site = site.get("platform", "").startswith("shopify")
 
-# --- Stage 1 config ---
-crawl_barcode = True
-if do_crawl:
-    st.subheader("2. Crawl settings")
-    crawl_barcode = st.checkbox("Include barcode backfill during crawl", value=True,
-                                 help="Needed for EAN matching in stage 2. Slower - skip only if you already have barcodes.")
+with tab_non_shopify:
+    if is_shopify_site:
+        st.info(f"'{site['name']}' is a Shopify site (platform: {site['platform']}) - "
+                f"see the 'Shopify Sites' tab to run the pipeline for it.")
+    else:
+        st.warning(
+            "Non-Shopify sites aren't supported by the automated crawl/match/detail "
+            "pipeline yet - the crawlers only speak Shopify's /products.json API. "
+            "This tab is for tracking these sites, not running them."
+        )
+        st.caption(f"**Site:** {site['name']}")
+        st.caption(f"**Domain:** {site['domain']}")
+        st.caption(f"**Base URL:** {site['base_url']}")
+        st.caption(f"**Status:** {site['status']}")
+        if site.get("notes"):
+            st.caption(f"**Notes:** {site['notes']}")
+        st.info("To onboard this site properly, it needs a bespoke crawling "
+                "approach - see README.md -> 'Onboarding a New Website' -> "
+                "platform type 'other'.")
 
-# --- Stage 2 config ---
-shopperstop_file_path = None
-shopperstop_ean_col = "Active EAN"
-crawled_csv_path = os.path.join(CATALOG_DIR, f"{derive_store_name(site['base_url'])}.csv") if mode == "Existing site" else None
+with tab_shopify:
+    if not is_shopify_site:
+        st.info(f"'{site['name']}' is registered as platform '{site['platform']}' "
+                f"(not Shopify) - see the 'Non-Shopify Sites' tab instead, or "
+                f"pick a different site in the sidebar.")
+        st.stop()
 
-if do_match:
-    st.subheader("3. Shoppers Stop matching file")
-    st.info(f"This file will be matched against the crawled catalog for "
-            f"**{site['name']}** ({site['domain']}). Wrong brand? Change the "
-            f"site in the sidebar first, then re-upload.")
-    uploaded = st.file_uploader("Upload the Shoppers Stop SKU/EAN file for this brand (Excel or CSV)",
-                                 type=["xlsx", "csv"])
+    # --- Stage selection ---
+    st.subheader("1. Choose which stages to run")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        do_crawl = st.checkbox("Crawl complete catalog", value=True,
+                                help="Bulk /products.json crawl + barcode backfill for this site")
+    with col2:
+        do_match = st.checkbox("Match against Shoppers Stop file", value=True,
+                                help="Join the crawled catalog to a Shoppers Stop SKU/EAN file on barcode")
+    with col3:
+        do_details = st.checkbox("Scrape rich details (matched SKUs only)", value=True,
+                                  help="Only scrapes products that matched in stage 2 - this is the optimization")
 
-    detected_ean_col = "Active EAN"
-    if uploaded:
-        shopperstop_file_path = os.path.join(SHOPPERSTOP_DIR, f"{site['name']}_master{os.path.splitext(uploaded.name)[1]}")
-        with open(shopperstop_file_path, "wb") as f:
-            f.write(uploaded.getbuffer())
-        st.success(f"Saved: {shopperstop_file_path}")
+    st.markdown("---")
 
-        try:
-            preview_df = pd.read_excel(shopperstop_file_path) if shopperstop_file_path.endswith(".xlsx") \
-                else pd.read_csv(shopperstop_file_path)
-            st.caption(f"**Columns found:** {list(preview_df.columns)}")
-            ean_candidates = [c for c in preview_df.columns if "ean" in c.lower() or "barcode" in c.lower()]
-            if len(ean_candidates) == 1:
-                detected_ean_col = ean_candidates[0]
-                st.caption(f"Auto-detected EAN column: **{detected_ean_col}**")
-            elif len(ean_candidates) > 1:
-                st.caption(f"Multiple possible EAN columns found: {ean_candidates} - confirm the right one below.")
-        except Exception as e:
-            st.warning(f"Could not preview file columns: {e}")
+    # --- Stage 1 config ---
+    crawl_barcode = True
+    if do_crawl:
+        st.subheader("2. Crawl settings")
+        crawl_barcode = st.checkbox("Include barcode backfill during crawl", value=True,
+                                     help="Needed for EAN matching in stage 2. Slower - skip only if you already have barcodes.")
 
-    shopperstop_ean_col = st.text_input("EAN column name in that file (edit if the auto-detected guess is wrong)",
-                                         value=detected_ean_col)
+    # --- Stage 2 config ---
+    shopperstop_file_path = None
+    shopperstop_ean_col = "Active EAN"
+    crawled_csv_path = os.path.join(CATALOG_DIR, f"{derive_store_name(site['base_url'])}.csv") if mode == "Existing site" else None
 
-    if not do_crawl:
-        crawled_csv_path = st.text_input(
-            "Path to already-crawled catalog CSV (since crawl stage is unchecked)",
-            value=crawled_csv_path or "",
+    if do_match:
+        st.subheader("3. Shoppers Stop matching file")
+        st.info(f"This file will be matched against the crawled catalog for "
+                f"**{site['name']}** ({site['domain']}). Wrong brand? Change the "
+                f"site in the sidebar first, then re-upload.")
+        uploaded = st.file_uploader("Upload the Shoppers Stop SKU/EAN file for this brand (Excel or CSV)",
+                                     type=["xlsx", "csv"])
+
+        detected_ean_col = "Active EAN"
+        if uploaded:
+            shopperstop_file_path = os.path.join(SHOPPERSTOP_DIR, f"{site['name']}_master{os.path.splitext(uploaded.name)[1]}")
+            with open(shopperstop_file_path, "wb") as f:
+                f.write(uploaded.getbuffer())
+            st.success(f"Saved: {shopperstop_file_path}")
+
+            try:
+                preview_df = pd.read_excel(shopperstop_file_path) if shopperstop_file_path.endswith(".xlsx") \
+                    else pd.read_csv(shopperstop_file_path)
+                st.caption(f"**Columns found:** {list(preview_df.columns)}")
+                ean_candidates = [c for c in preview_df.columns if "ean" in c.lower() or "barcode" in c.lower()]
+                if len(ean_candidates) == 1:
+                    detected_ean_col = ean_candidates[0]
+                    st.caption(f"Auto-detected EAN column: **{detected_ean_col}**")
+                elif len(ean_candidates) > 1:
+                    st.caption(f"Multiple possible EAN columns found: {ean_candidates} - confirm the right one below.")
+            except Exception as e:
+                st.warning(f"Could not preview file columns: {e}")
+
+        shopperstop_ean_col = st.text_input("EAN column name in that file (edit if the auto-detected guess is wrong)",
+                                             value=detected_ean_col)
+
+        if not do_crawl:
+            crawled_csv_path = st.text_input(
+                "Path to already-crawled catalog CSV (since crawl stage is unchecked)",
+                value=crawled_csv_path or "",
+            )
+
+    # --- Stage 3 config (when running standalone, without stage 2 in this session) ---
+    matched_dir_for_site = os.path.join(MATCHED_DIR, site["name"]) if mode == "Existing site" else None
+    matched_xlsx_path = os.path.join(matched_dir_for_site, "matched.xlsx") if matched_dir_for_site else None
+
+    if do_details and not do_match:
+        st.subheader("4. Matched file (Stage 2 is unchecked, so point Stage 3 at existing matched data)")
+
+        default_path = matched_xlsx_path
+        existing_found = default_path and os.path.exists(default_path)
+        st.caption(
+            f"Looking for: `{default_path}` - "
+            + ("found on disk, will use it." if existing_found else "not found. Upload it below or fix the path.")
         )
 
-# --- Stage 3 config (when running standalone, without stage 2 in this session) ---
-matched_dir_for_site = os.path.join(MATCHED_DIR, site["name"]) if mode == "Existing site" else None
-matched_xlsx_path = os.path.join(matched_dir_for_site, "matched.xlsx") if matched_dir_for_site else None
+        uploaded_matched = st.file_uploader(
+            "Upload matched.xlsx (from a previous Stage 2 run / the download button)",
+            type=["xlsx"],
+        )
+        matched_xlsx_path = st.text_input("Path to matched.xlsx", value=default_path or "")
 
-if do_details and not do_match:
-    st.subheader("4. Matched file (Stage 2 is unchecked, so point Stage 3 at existing matched data)")
+        if uploaded_matched:
+            os.makedirs(os.path.dirname(matched_xlsx_path) or matched_dir_for_site, exist_ok=True)
+            with open(matched_xlsx_path, "wb") as f:
+                f.write(uploaded_matched.getbuffer())
+            st.success(f"Saved uploaded file to: {matched_xlsx_path}")
 
-    default_path = matched_xlsx_path
-    existing_found = default_path and os.path.exists(default_path)
-    st.caption(
-        f"Looking for: `{default_path}` - "
-        + ("found on disk, will use it." if existing_found else "not found. Upload it below or fix the path.")
-    )
+    st.markdown("---")
 
-    uploaded_matched = st.file_uploader(
-        "Upload matched.xlsx (from a previous Stage 2 run / the download button)",
-        type=["xlsx"],
-    )
-    matched_xlsx_path = st.text_input("Path to matched.xlsx", value=default_path or "")
-
-    if uploaded_matched:
-        os.makedirs(os.path.dirname(matched_xlsx_path) or matched_dir_for_site, exist_ok=True)
-        with open(matched_xlsx_path, "wb") as f:
-            f.write(uploaded_matched.getbuffer())
-        st.success(f"Saved uploaded file to: {matched_xlsx_path}")
-
-st.markdown("---")
-
-# --- Run button ---
-if st.button("Run selected stages", type="primary"):
-    if do_match and not shopperstop_file_path:
-        st.error("Please upload a Shoppers Stop file before running the match stage.")
-        st.stop()
-    if do_details and not do_match and not (matched_xlsx_path and os.path.exists(matched_xlsx_path)):
-        st.error(f"No matched.xlsx found at: {matched_xlsx_path}. "
-                 f"Upload it in section 4 above, or check 'Match against Shoppers Stop file' to generate it first.")
-        st.stop()
-
-    if matched_dir_for_site is None:
-        matched_dir_for_site = os.path.join(MATCHED_DIR, site["name"])
-    if matched_xlsx_path is None:
-        matched_xlsx_path = os.path.join(matched_dir_for_site, "matched.xlsx")
-
-    # --- Stage 1: Crawl ---
-    if do_crawl:
-        st.subheader("Stage 1: Crawling catalog")
-        log_box = st.empty()
-        cmd = [sys.executable, "shopify_catalog_downloader.py", site["base_url"]]
-        cmd.append("--barcode" if crawl_barcode else "--no-barcode")
-        returncode, _ = run_command_streaming(cmd, cwd=CRAWLERS_DIR, log_placeholder=log_box)
-        if returncode != 0:
-            st.error("Crawl stage failed - see log above.")
+    # --- Run button ---
+    if st.button("Run selected stages", type="primary"):
+        if do_match and not shopperstop_file_path:
+            st.error("Please upload a Shoppers Stop file before running the match stage.")
             st.stop()
-        st.success("Crawl stage complete.")
-
-        crawled_output_path = os.path.join(CATALOG_DIR, f"{derive_store_name(site['base_url'])}.csv")
-        if os.path.exists(crawled_output_path):
-            crawled_preview_df = pd.read_csv(crawled_output_path, dtype=str)
-            st.write(f"**{len(crawled_preview_df)} rows crawled.** Preview:")
-            st.dataframe(crawled_preview_df.head(20))
-            with open(crawled_output_path, "rb") as f:
-                st.download_button("Download crawled catalog CSV", f,
-                                    file_name=f"{site['name']}_catalog.csv",
-                                    key="download_crawled_csv")
-        else:
-            st.warning(f"Crawl reported success but no output file found at {crawled_output_path} - "
-                       f"check the log above for '0 products found'.")
-
-    # --- Stage 2: Match ---
-    if do_match:
-        st.subheader("Stage 2: Matching against Shoppers Stop")
-        if not os.path.exists(crawled_csv_path):
-            st.error(f"Crawled catalog CSV not found at: {crawled_csv_path}")
+        if do_details and not do_match and not (matched_xlsx_path and os.path.exists(matched_xlsx_path)):
+            st.error(f"No matched.xlsx found at: {matched_xlsx_path}. "
+                     f"Upload it in section 4 above, or check 'Match against Shoppers Stop file' to generate it first.")
             st.stop()
-        log_box = st.empty()
-        cmd = [
-            sys.executable, "match_catalog_by_ean.py",
-            "--shopperstop-file", shopperstop_file_path,
-            "--shopperstop-ean-col", shopperstop_ean_col,
-            "--crawled-file", crawled_csv_path,
-            "--crawled-barcode-col", "barcode",
-            "--output-dir", matched_dir_for_site,
-        ]
-        returncode, _ = run_command_streaming(cmd, cwd=MATCHING_DIR, log_placeholder=log_box)
-        if returncode != 0:
-            st.error("Match stage failed - see log above.")
-            st.stop()
-        st.success("Match stage complete.")
 
-        if os.path.exists(matched_xlsx_path):
+        if matched_dir_for_site is None:
+            matched_dir_for_site = os.path.join(MATCHED_DIR, site["name"])
+        if matched_xlsx_path is None:
+            matched_xlsx_path = os.path.join(matched_dir_for_site, "matched.xlsx")
+
+        # --- Stage 1: Crawl ---
+        if do_crawl:
+            st.subheader("Stage 1: Crawling catalog")
+            log_box = st.empty()
+            cmd = [sys.executable, "shopify_catalog_downloader.py", site["base_url"]]
+            cmd.append("--barcode" if crawl_barcode else "--no-barcode")
+            returncode, _ = run_command_streaming(cmd, cwd=CRAWLERS_DIR, log_placeholder=log_box)
+            if returncode != 0:
+                st.error("Crawl stage failed - see log above.")
+                st.stop()
+            st.success("Crawl stage complete.")
+
+            crawled_output_path = os.path.join(CATALOG_DIR, f"{derive_store_name(site['base_url'])}.csv")
+            if os.path.exists(crawled_output_path):
+                crawled_preview_df = pd.read_csv(crawled_output_path, dtype=str)
+                st.write(f"**{len(crawled_preview_df)} rows crawled.** Preview:")
+                st.dataframe(crawled_preview_df.head(20))
+                with open(crawled_output_path, "rb") as f:
+                    st.download_button("Download crawled catalog CSV", f,
+                                        file_name=f"{site['name']}_catalog.csv",
+                                        key="download_crawled_csv")
+            else:
+                st.warning(f"Crawl reported success but no output file found at {crawled_output_path} - "
+                           f"check the log above for '0 products found'.")
+
+        # --- Stage 2: Match ---
+        if do_match:
+            st.subheader("Stage 2: Matching against Shoppers Stop")
+            if not os.path.exists(crawled_csv_path):
+                st.error(f"Crawled catalog CSV not found at: {crawled_csv_path}")
+                st.stop()
+            log_box = st.empty()
+            cmd = [
+                sys.executable, "match_catalog_by_ean.py",
+                "--shopperstop-file", shopperstop_file_path,
+                "--shopperstop-ean-col", shopperstop_ean_col,
+                "--crawled-file", crawled_csv_path,
+                "--crawled-barcode-col", "barcode",
+                "--output-dir", matched_dir_for_site,
+            ]
+            returncode, _ = run_command_streaming(cmd, cwd=MATCHING_DIR, log_placeholder=log_box)
+            if returncode != 0:
+                st.error("Match stage failed - see log above.")
+                st.stop()
+            st.success("Match stage complete.")
+
+            if os.path.exists(matched_xlsx_path):
+                matched_df = pd.read_excel(matched_xlsx_path)
+                st.write(f"**{len(matched_df)} matched rows.** Preview:")
+                st.dataframe(matched_df.head(20))
+                with open(matched_xlsx_path, "rb") as f:
+                    st.download_button("Download matched.xlsx", f, file_name=f"{site['name']}_matched.xlsx")
+
+        # --- Stage 3: Detail scrape (matched only) ---
+        if do_details:
+            st.subheader("Stage 3: Scraping rich details (matched SKUs only)")
+            if not os.path.exists(matched_xlsx_path):
+                st.error(
+                    f"No matched.xlsx found at {matched_xlsx_path}. "
+                    f"Run the match stage first (or point stage 3 at an existing matched file - "
+                    f"not yet supported in this UI, run matching/match_catalog_by_ean.py manually)."
+                )
+                st.stop()
+
             matched_df = pd.read_excel(matched_xlsx_path)
-            st.write(f"**{len(matched_df)} matched rows.** Preview:")
-            st.dataframe(matched_df.head(20))
-            with open(matched_xlsx_path, "rb") as f:
-                st.download_button("Download matched.xlsx", f, file_name=f"{site['name']}_matched.xlsx")
+            handle_col = "handle" if "handle" in matched_df.columns else "handle_crawled"
+            if handle_col not in matched_df.columns:
+                st.error(f"Could not find a 'handle' column in matched.xlsx. "
+                         f"Columns present: {list(matched_df.columns)}")
+                st.stop()
 
-    # --- Stage 3: Detail scrape (matched only) ---
-    if do_details:
-        st.subheader("Stage 3: Scraping rich details (matched SKUs only)")
-        if not os.path.exists(matched_xlsx_path):
-            st.error(
-                f"No matched.xlsx found at {matched_xlsx_path}. "
-                f"Run the match stage first (or point stage 3 at an existing matched file - "
-                f"not yet supported in this UI, run matching/match_catalog_by_ean.py manually)."
-            )
-            st.stop()
+            handles = matched_df[handle_col].dropna().unique().tolist()
+            url_list_path = os.path.join(matched_dir_for_site, "matched_product_urls.txt")
+            with open(url_list_path, "w", encoding="utf-8") as f:
+                for h in handles:
+                    f.write(f"{site['base_url'].rstrip('/')}/products/{h}\n")
 
-        matched_df = pd.read_excel(matched_xlsx_path)
-        handle_col = "handle" if "handle" in matched_df.columns else "handle_crawled"
-        if handle_col not in matched_df.columns:
-            st.error(f"Could not find a 'handle' column in matched.xlsx. "
-                     f"Columns present: {list(matched_df.columns)}")
-            st.stop()
+            st.write(f"Scraping details for {len(handles)} matched products only "
+                     f"(instead of the full catalog - this is the optimization).")
 
-        handles = matched_df[handle_col].dropna().unique().tolist()
-        url_list_path = os.path.join(matched_dir_for_site, "matched_product_urls.txt")
-        with open(url_list_path, "w", encoding="utf-8") as f:
-            for h in handles:
-                f.write(f"{site['base_url'].rstrip('/')}/products/{h}\n")
+            details_output = os.path.join(DETAILS_DIR, f"{site['name']}_details.csv")
+            log_box = st.empty()
+            cmd = [sys.executable, "scrape_product_details.py", url_list_path,
+                   "--url-list", "--output", details_output]
+            returncode, _ = run_command_streaming(cmd, cwd=CRAWLERS_DIR, log_placeholder=log_box)
+            if returncode != 0:
+                st.error("Detail scrape stage failed - see log above.")
+                st.stop()
+            st.success("Detail scrape stage complete.")
 
-        st.write(f"Scraping details for {len(handles)} matched products only "
-                 f"(instead of the full catalog - this is the optimization).")
+            if os.path.exists(details_output):
+                details_df = pd.read_csv(details_output)
+                st.write(f"**{len(details_df)} products with details scraped.** Preview:")
+                st.dataframe(details_df.head(20))
+                with open(details_output, "rb") as f:
+                    st.download_button("Download details CSV", f, file_name=f"{site['name']}_details.csv")
 
-        details_output = os.path.join(DETAILS_DIR, f"{site['name']}_details.csv")
-        log_box = st.empty()
-        cmd = [sys.executable, "scrape_product_details.py", url_list_path,
-               "--url-list", "--output", details_output]
-        returncode, _ = run_command_streaming(cmd, cwd=CRAWLERS_DIR, log_placeholder=log_box)
-        if returncode != 0:
-            st.error("Detail scrape stage failed - see log above.")
-            st.stop()
-        st.success("Detail scrape stage complete.")
-
-        if os.path.exists(details_output):
-            details_df = pd.read_csv(details_output)
-            st.write(f"**{len(details_df)} products with details scraped.** Preview:")
-            st.dataframe(details_df.head(20))
-            with open(details_output, "rb") as f:
-                st.download_button("Download details CSV", f, file_name=f"{site['name']}_details.csv")
-
-    st.balloons()
+        st.balloons()
